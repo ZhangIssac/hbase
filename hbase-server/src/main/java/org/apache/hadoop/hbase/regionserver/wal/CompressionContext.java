@@ -28,7 +28,6 @@ import java.util.Map;
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseInterfaceAudience;
-import org.apache.hadoop.hbase.io.BoundedDelegatingInputStream;
 import org.apache.hadoop.hbase.io.TagCompressionContext;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.util.Dictionary;
@@ -77,7 +76,7 @@ public class CompressionContext {
     private final Compression.Algorithm algorithm;
     private Compressor compressor;
     private Decompressor decompressor;
-    private BoundedDelegatingInputStream lowerIn;
+    private WALDecompressionBoundedDelegatingInputStream lowerIn;
     private ByteArrayOutputStream lowerOut;
     private InputStream compressedIn;
     private OutputStream compressedOut;
@@ -115,13 +114,11 @@ public class CompressionContext {
 
       // Create the input streams here the first time around.
       if (compressedIn == null) {
-        lowerIn = new BoundedDelegatingInputStream(in, inLength);
+        lowerIn = new WALDecompressionBoundedDelegatingInputStream(in);
         if (decompressor == null) {
           decompressor = algorithm.getDecompressor();
         }
         compressedIn = algorithm.createDecompressionStream(lowerIn, decompressor, IO_BUFFER_SIZE);
-      } else {
-        lowerIn.setDelegate(in, inLength);
       }
       if (outLength == 0) {
         // The BufferedInputStream will return earlier and skip reading anything if outLength == 0,
@@ -131,6 +128,7 @@ public class CompressionContext {
         // such as data loss when splitting wal or replicating wal.
         IOUtils.skipFully(in, inLength);
       } else {
+        lowerIn.resetLimit(inLength);
         IOUtils.readFully(compressedIn, outArray, outOffset, outLength);
       }
     }
